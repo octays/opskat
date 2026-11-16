@@ -1,4 +1,4 @@
-.PHONY: dev dev-sandbox dev-sandbox-down dev-sandbox-status run build build-embed install-app clean install build-cli install-cli build-ext lint test test-cover test-e2e test-e2e-scratch install-skill
+.PHONY: dev dev-sandbox dev-sandbox-down dev-sandbox-status run build build-embed install-app clean install build-cli install-cli build-ext lint test test-cover test-e2e test-e2e-scratch install-skill package package-clean package-checksums release-publish
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
@@ -161,8 +161,114 @@ install-skill:
 
 # 清理构建产物
 clean:
-	rm -rf build/bin frontend/dist internal/embedded/opsctl_bin \
+	rm -rf build/bin build/release frontend/dist internal/embedded/opsctl_bin \
 		extensions/*/dist \
 		coverage.out coverage.html coverage_new.out \
 		opskat opsctl \
 		frontend/package.json.md5
+
+# ============================ 本地跨平台打包与发布 ============================
+# 与 CI（build-desktop.yml + release.yml）产出同构：opskat-v<VERSION>-<platform>.(dmg|deb|
+# -installer.exe) + windows 便携 zip + SHA256SUMS.txt + release-info.json——自更新器
+# (update_svc)按「资产名含 <goos>-<goarch>」匹配、镜像回退读 release-info.json，布局不能改。
+# Actions 不可用（禁用/fork 不触发）时的本地出路：
+#   make package                                   # 默认 darwin-arm64,darwin-amd64
+#   make package PLATFORMS=windows-amd64           # 需 mingw-w64 + makensis
+#   make package PLATFORMS=linux-amd64             # 需 docker（容器内装 gtk/webkit）
+#   make release-publish                           # 打包 + gh 发布到 origin 仓库
+# 工具链：darwin 原生交叉即可；windows: brew install mingw-w64 makensis；linux: docker。
+FILE_VERSION ?= v$(VERSION)
+PACKAGE_DIR ?= build/release
+# ad-hoc 签名；正式发布置为 "Developer ID Application: ..."
+SIGNING_IDENTITY ?= -
+GH_REPO ?= $(shell git remote get-url origin 2>/dev/null | sed -E 's#.*[:/]([^/]+/[^/.]+)(\.git)?$$#\1#')
+PLATFORMS ?= darwin-arm64 darwin-amd64
+
+package: package-clean
+	@for p in $(subst $(comma), ,$(PLATFORMS)); do \
+		$(MAKE) --no-print-directory package-$$p || exit 1; \
+	done
+	$(MAKE) --no-print-directory package-checksums
+	@echo "产物在 $(PACKAGE_DIR)/："; ls -lh $(PACKAGE_DIR)
+
+comma := ,
+
+package-clean:
+	rm -rf $(PACKAGE_DIR) build/release-stage
+
+package-checksums:
+	cd $(PACKAGE_DIR) && shasum -a 256 * > SHA256SUMS.txt
+
+# ----- macOS：dmg（.app + /Applications 快捷方式），hdiutil 仅 mac 有 -----
+package-darwin-%:
+	$(eval ARCH := $*)
+	@command -v hdiutil >/dev/null || { echo "需要 macOS 的 hdiutil" >&2; exit 1; }
+	GOOS=darwin GOARCH=$(ARCH) go build -ldflags="$(LDFLAGS)" -o ./internal/embedded/opsctl_bin ./cmd/opsctl/
+	bun scripts/desktop.mjs build --platform darwin/$(ARCH) --ldflags "$(LDFLAGS)" --tags embed_opsctl
+	codesign --force --deep --sign "$(SIGNING_IDENTITY)" --options runtime \
+		--entitlements build/darwin/entitlements.plist build/bin/opskat.app
+	mkdir -p $(PACKAGE_DIR)
+	rm -rf build/release-stage && mkdir -p build/release-stage
+	cp -R build/bin/opskat.app build/release-stage/
+	ln -s /Applications build/release-stage/Applications
+	hdiutil create -volname "Opskat" -srcfolder build/release-stage -ov -format UDZO \
+		$(PACKAGE_DIR)/opskat-$(FILE_VERSION)-darwin-$(ARCH).dmg
+	rm -rf build/release-stage
+
+# ----- Windows：NSIS 安装包（+amd64 便携 zip）。交叉需 mingw 与 makensis -----
+package-windows-%:
+	$(eval ARCH := $*)
+	$(eval CC := $(if $(filter amd64,$(ARCH)),x86_64,aarch64)-w64-mingw32-gcc)
+	@command -v $(CC) >/dev/null || { echo "缺交叉编译器 $(CC)：brew install mingw-w64" >&2; exit 1; }
+	@command -v makensis >/dev/null || { echo "缺 NSIS：brew install makensis" >&2; exit 1; }
+	GOOS=windows GOARCH=$(ARCH) go build -ldflags="$(LDFLAGS)" -o ./internal/embedded/opsctl_bin ./cmd/opsctl/
+	CC=$(CC) bun scripts/desktop.mjs build --nsis --platform windows/$(ARCH) --ldflags "$(LDFLAGS)" --tags embed_opsctl
+	mkdir -p $(PACKAGE_DIR)
+	mv build/bin/opskat-$(ARCH)-installer.exe $(PACKAGE_DIR)/opskat-$(FILE_VERSION)-windows-$(ARCH)-installer.exe
+ifeq ($(ARCH),amd64)
+	rm -rf $(PACKAGE_DIR)/portable && mkdir -p $(PACKAGE_DIR)/portable/opskat-$(FILE_VERSION)-windows-$(ARCH)/data
+	cp build/bin/opskat.exe $(PACKAGE_DIR)/portable/opskat-$(FILE_VERSION)-windows-$(ARCH)/
+	cp internal/embedded/opsctl_bin $(PACKAGE_DIR)/portable/opskat-$(FILE_VERSION)-windows-$(ARCH)/opsctl.exe
+	cp build/windows/portable-data-readme.txt $(PACKAGE_DIR)/portable/opskat-$(FILE_VERSION)-windows-$(ARCH)/data/README.txt
+	cd $(PACKAGE_DIR)/portable && zip -qr ../opskat-$(FILE_VERSION)-windows-$(ARCH)-portable.zip . && cd ../..
+	rm -rf $(PACKAGE_DIR)/portable
+endif
+
+# ----- Linux：deb。gtk/webkit 的 cgo 依赖太重不做宿主交叉，进 golang 容器构建 -----
+# node_modules 用具名卷隔离：容器装的 linux 二进制不落回宿主目录（否则 mac 前端环境被污染）。
+# 跨架构（如 M 芯片打 amd64）由 Docker 走 Rosetta 模拟，明显变慢属预期。
+package-linux-%:
+	$(eval ARCH := $*)
+	@command -v docker >/dev/null || { echo "linux 打包需要 docker" >&2; exit 1; }
+	mkdir -p $(PACKAGE_DIR)
+	docker run --rm --platform linux/$(ARCH) -v $(CURDIR):/src -w /src \
+		-v opskat-pkg-node-modules:/src/frontend/node_modules \
+		-v opskat-pkg-go-cache:/go \
+		-e FILE_VERSION=$(FILE_VERSION) -e VERSION=$(VERSION) -e COMMIT_ID=$(COMMIT_ID) -e TARGET_ARCH=$(ARCH) \
+		golang:1.27 bash -euxo pipefail -c '\
+			apt-get update -qq && apt-get install -y -qq --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev zip >/dev/null; \
+			curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash >/dev/null 2>&1; \
+			cd frontend && bun x --bun pnpm@10.11.0 install --frozen-lockfile && cd ..; \
+			go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0 && export PATH="$$PATH:/go/bin"; \
+			go build -ldflags="-s -w -X github.com/cago-frame/cago/configs.Version=$$VERSION -X github.com/octays/opskat/internal/buildinfo.CommitID=$$COMMIT_ID" -o ./internal/embedded/opsctl_bin ./cmd/opsctl/; \
+			bun scripts/desktop.mjs build --platform linux/$$TARGET_ARCH --ldflags "-s -w -X github.com/cago-frame/cago/configs.Version=$$VERSION -X github.com/octays/opskat/internal/buildinfo.CommitID=$$COMMIT_ID" --tags embed_opsctl; \
+			rm -rf /tmp/deb && mkdir -p /tmp/deb/DEBIAN /tmp/deb/usr/bin /tmp/deb/usr/share/applications /tmp/deb/usr/share/icons/hicolor/256x256/apps; \
+			cp build/bin/opskat /tmp/deb/usr/bin/opskat; \
+			cp build/appicon.png /tmp/deb/usr/share/icons/hicolor/256x256/apps/opskat.png; \
+			DEB_VER=$$(echo "$$VERSION" | sed "s/^v//; s/-/~/g"); \
+			printf "Package: opskat\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: %s\nMaintainer: opskat\nDescription: Opskat desktop application\n" "$$DEB_VER" "$$TARGET_ARCH" > /tmp/deb/DEBIAN/control; \
+			printf "[Desktop Entry]\nName=Opskat\nExec=/usr/bin/opskat\nIcon=opskat\nType=Application\nCategories=Utility;\n" > /tmp/deb/usr/share/applications/opskat.desktop; \
+			dpkg-deb --build /tmp/deb "opskat-$$FILE_VERSION-linux-$$TARGET_ARCH.deb" >/dev/null; \
+			mv "opskat-$$FILE_VERSION-linux-$$TARGET_ARCH.deb" /src/$(PACKAGE_DIR)/'
+	@echo "linux-$(ARCH) 打包完成"
+
+# ----- 发布：产物 → GitHub Release（对齐 release.yml：删旧建新 + SHA256SUMS + release-info.json）-----
+release-publish: package
+	@command -v gh >/dev/null || { echo "需要 gh CLI 并已登录" >&2; exit 1; }
+	$(eval TAG := v$(VERSION))
+	$(eval TAG_FLAG := $(if $(findstring beta,$(VERSION)),--prerelease,$(if $(findstring rc,$(VERSION)),--prerelease,)))
+	gh release delete $(TAG) -y 2>/dev/null || true
+	gh release create $(TAG) --title $(TAG) --generate-notes $(TAG_FLAG) $(PACKAGE_DIR)/*
+	gh api repos/$(GH_REPO)/releases/tags/$(TAG) > $(PACKAGE_DIR)/release-info.json
+	gh release upload $(TAG) $(PACKAGE_DIR)/release-info.json --clobber
+	@echo "已发布 $(GH_REPO) 的 $(TAG)"
