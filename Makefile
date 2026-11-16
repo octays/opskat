@@ -243,11 +243,12 @@ package-linux-%:
 	mkdir -p $(PACKAGE_DIR)
 	docker run --rm --platform linux/$(ARCH) -v $(CURDIR):/src -w /src \
 		-v opskat-pkg-node-modules:/src/frontend/node_modules \
+		-v opskat-pkg-frontend-dist:/src/frontend/dist \
 		-v opskat-pkg-go-cache:/go \
 		-e FILE_VERSION=$(FILE_VERSION) -e VERSION=$(VERSION) -e COMMIT_ID=$(COMMIT_ID) -e TARGET_ARCH=$(ARCH) \
 		golang:1.27 bash -euxo pipefail -c '\
-			apt-get update -qq && apt-get install -y -qq --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev zip >/dev/null; \
-			curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash >/dev/null 2>&1; \
+			apt-get update -qq && apt-get install -y -qq --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev zip unzip >/dev/null; \
+			curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash >/dev/null; \
 			cd frontend && bun x --bun pnpm@10.11.0 install --frozen-lockfile && cd ..; \
 			go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0 && export PATH="$$PATH:/go/bin"; \
 			go build -ldflags="-s -w -X github.com/cago-frame/cago/configs.Version=$$VERSION -X github.com/octays/opskat/internal/buildinfo.CommitID=$$COMMIT_ID" -o ./internal/embedded/opsctl_bin ./cmd/opsctl/; \
