@@ -11,6 +11,7 @@ import (
 
 	"github.com/octays/opskat/internal/desktop"
 	"github.com/octays/opskat/internal/pkg/macbtn"
+	"github.com/octays/opskat/internal/pkg/notifycenter"
 
 	"github.com/cago-frame/cago/pkg/logger"
 	"github.com/google/uuid"
@@ -81,6 +82,7 @@ func (s *System) openNativeWindow(name string, query url.Values) {
 		Mac: application.MacWindow{TitleBar: application.MacTitleBarHidden, Backdrop: application.MacBackdropTransparent},
 	})
 	macbtn.TrackWindow(window)
+	notifycenter.TrackWindow(window)
 	var approved atomic.Bool
 	unsubscribe := app.Event.On("desktop:close-ready", func(event *application.CustomEvent) {
 		if event.Sender == name {

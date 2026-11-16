@@ -62,8 +62,10 @@ import (
 	"github.com/cago-frame/cago/pkg/logger"
 	"github.com/octays/opskat/internal/desktop"
 	"github.com/octays/opskat/internal/pkg/macbtn"
+	"github.com/octays/opskat/internal/pkg/notifycenter"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 	"go.uber.org/zap"
 )
 
@@ -281,6 +283,22 @@ func main() {
 	// 终端里长按字母键应当按键重复；macOS 默认弹变音符号选择器（长按 d 往终端
 	// 里塞 ď/ð 一类字符），在应用域禁用。
 	desktop.DisablePressAndHold()
+	notificationSvc := notifications.New()
+	notifycenter.Init(func(title, body string) error {
+		return notificationSvc.SendNotification(notifications.NotificationOptions{
+			Title: title, Body: body, ThreadID: "opskat",
+		})
+	})
+	// 点通知把主窗口带回前台;工作区窗口不在此列——通知正文不区分来源窗口。
+	notificationSvc.OnNotificationResponse(func(result notifications.NotificationResult) {
+		if result.Response.ActionIdentifier != notifications.DefaultActionIdentifier {
+			return
+		}
+		if w, ok := application.Get().Window.GetByName("main"); ok {
+			w.Focus()
+		}
+	})
+
 	appOptions := application.Options{
 		Transport: verificationTransport,
 		Name:      "OpsKat",
@@ -289,6 +307,7 @@ func main() {
 			Middleware: desktop.NoCacheAssets,
 		},
 		Services: []application.Service{
+			application.NewService(notificationSvc),
 			application.NewService(sys),
 			application.NewService(sshB),
 			application.NewService(queryB),
@@ -399,6 +418,8 @@ func main() {
 	})
 	// macOS：把原生红绿灯对齐到顶栏中线（见 internal/pkg/macbtn）。
 	macbtn.TrackWindow(mainWindow)
+	// 系统通知按「应用是否有窗口在焦点」决定是否打扰（见 internal/pkg/notifycenter）。
+	notifycenter.TrackWindow(mainWindow)
 	system.RegisterMainWindowDrops(mainWindow)
 	mainWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()

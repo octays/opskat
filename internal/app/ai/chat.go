@@ -19,6 +19,7 @@ import (
 	"github.com/octays/opskat/internal/app/i18n"
 	"github.com/octays/opskat/internal/model/entity/ai_provider_entity"
 	"github.com/octays/opskat/internal/model/entity/conversation_entity"
+	"github.com/octays/opskat/internal/pkg/notifycenter"
 	"github.com/octays/opskat/internal/service/ai_provider_svc"
 	"github.com/octays/opskat/internal/service/conversation_svc"
 	"github.com/octays/opskat/internal/service/custom_type_svc"
@@ -527,10 +528,20 @@ func (a *AI) SendAIMessage(callCtx context.Context, convID int64, messages []run
 		application.Get().Event.Emit(eventName, event)
 
 		// done/stopped 时更新会话时间
-		if event.Type == "done" || event.Type == "stopped" {
+		if event.Type == "done" || event.Type == "stopped" || event.Type == "error" {
 			if conv, err := conversation_svc.Conversation().Get(a.ctx, convID); err == nil {
 				if err := conversation_svc.Conversation().Update(a.ctx, conv); err != nil {
 					logger.Default().Warn("update conversation time", zap.Error(err))
+				}
+				// 应用在后台时把终态送进系统通知中心——用户切走等结果,应用内
+				// 提示看不到,这是唯一能叫他回来的通道(见 internal/pkg/notifycenter)。
+				switch event.Type {
+				case "done":
+					notifycenter.Send(a.ctx, "AI 任务完成", conv.Title)
+				case "stopped":
+					notifycenter.Send(a.ctx, "AI 任务已停止", conv.Title)
+				case "error":
+					notifycenter.Send(a.ctx, "AI 任务出错", conv.Title)
 				}
 			}
 		}
