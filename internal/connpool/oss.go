@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -140,10 +141,14 @@ func InvalidateOSS(assetID int64) {
 }
 
 // DialOSSEndpoint 以同一份凭据与传输配置拨一个「指定 endpoint」的 minio 客户端。
-// 供 oss_svc 在收到阿里云 PermanentRedirect（桶在另一区域）时按响应里给出的
-// 真实 endpoint 重签重试；endpoint 形如 oss-cn-beijing.aliyuncs.com（无 scheme，
-// 沿用 cfg 的 TLS 选择），带 scheme 时以 scheme 为准。
+// 供 oss_svc 在收到 PermanentRedirect（桶在另一区域）时按响应里给出的真实
+// endpoint 重签重试；endpoint 形如 oss-cn-beijing.aliyuncs.com（无 scheme，
+// 沿用 cfg 的 TLS 选择），带 scheme 时以 scheme 为准。AWS 的 Endpoint 带桶名
+// 前缀（mybucket.s3.us-west-2.amazonaws.com），拨号前先归一化。
 func DialOSSEndpoint(ctx context.Context, cfg *asset_entity.OSSConfig, secret, endpoint string) (*minio.Client, error) {
+	if !strings.Contains(endpoint, "://") {
+		endpoint = normalizeRedirectEndpoint(endpoint)
+	}
 	redirected := *cfg
 	redirected.Endpoint = endpoint
 	// scheme 在 buildMinioOptions 里决定 secure；无 scheme 的重定向目标沿用原配置。
@@ -160,17 +165,71 @@ func DialOSSEndpoint(ctx context.Context, cfg *asset_entity.OSSConfig, secret, e
 	return minio.New(endpoint, opts)
 }
 
+// awsS3CoreHost 匹配裸 AWS S3 区域 endpoint：s3[.dualstack|-fips][.-]<region>.amazonaws.com。
+// 全局 s3.amazonaws.com 与桶名前缀形态均不匹配（前者无区域，后者由 normalizeRedirectEndpoint 先剥）。
+var awsS3CoreHost = regexp.MustCompile(`^(s3(?:-fips)?)(?:\.dualstack)?[.-]([a-z0-9-]+)\.amazonaws\.com$`)
+
 // redirectRegion 从重定向 endpoint 推导 V4 签名区域：oss-cn-beijing.aliyuncs.com →
-// cn-beijing。带着原区域（如 cn-hangzhou）签新 endpoint 会被拒签。非 aliyuncs
-// 形态返回空串，交给 minio 自行解析桶区域。
+// cn-beijing，s3.us-west-2.amazonaws.com → us-west-2。带着原区域（如 cn-hangzhou）
+// 签新 endpoint 会被拒签。非 aliyuncs / 非 AWS S3 形态返回空串，交给 minio 自行解析桶区域。
 func redirectRegion(endpoint string) string {
 	host := strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
-	if !strings.HasSuffix(host, ".aliyuncs.com") {
+	if strings.HasSuffix(host, ".aliyuncs.com") {
+		// 区域在首标签：oss-cn-beijing.aliyuncs.com → cn-beijing（内部形态
+		// oss-cn-hangzhou-internal 同理）。曾先把 .aliyuncs.com 后缀裁掉再按
+		// “.”切分——唯一的点被裁掉，恒返回空串，签名区域从未生效过。
+		first := host
+		if before, _, ok := strings.Cut(host, "."); ok {
+			first = before
+		}
+		if strings.HasPrefix(first, "oss-") {
+			return strings.TrimPrefix(first, "oss-")
+		}
 		return ""
 	}
-	prefix, _, ok := strings.Cut(strings.TrimSuffix(host, ".aliyuncs.com"), ".")
-	if !ok || !strings.HasPrefix(prefix, "oss-") {
-		return ""
+	if m := awsS3CoreHost.FindStringSubmatch(host); m != nil {
+		return m[2]
 	}
-	return strings.TrimPrefix(prefix, "oss-")
+	return ""
+}
+
+// awsS3HostSuffix 在 host 尾部（标签边界处）定位裸 AWS S3 endpoint（含全局形态），
+// 捕获组即该 endpoint 本身；仅当 host 以它开头（无桶名前缀）时不匹配。
+var awsS3HostSuffix = regexp.MustCompile(`(?:^|\.)(s3(?:-fips)?(?:\.dualstack)?[.-][a-z0-9-]+\.amazonaws\.com|s3\.amazonaws\.com)$`)
+
+// normalizeRedirectEndpoint 剥掉 AWS 重定向 endpoint 的桶名前缀：
+// <Endpoint> 是虚拟主机形态（mybucket.s3.us-west-2.amazonaws.com），直接拨号会在
+// DNS 寻址形态下叠成 mybucket.mybucket.s3...。尾部能定位到裸 AWS S3 endpoint 且
+// 前面还有标签时剥掉前缀，其余形态（阿里云本就裸域名、私有链接、自定义）原样返回。
+func normalizeRedirectEndpoint(endpoint string) string {
+	m := awsS3HostSuffix.FindStringSubmatch(strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://"))
+	if m == nil || m[0] == m[1] {
+		return endpoint
+	}
+	scheme := ""
+	if strings.HasPrefix(endpoint, "https://") {
+		scheme = "https://"
+	} else if strings.HasPrefix(endpoint, "http://") {
+		scheme = "http://"
+	}
+	return scheme + m[1]
+}
+
+// AWSRegionalEndpoint 由「资产当前 endpoint + PermanentRedirect 响应给出的桶真实区域」
+// 推导该区域的 AWS S3 endpoint（保留 dualstack / FIPS 前缀）。仅 AWS S3 形态可推导；
+// 阿里云/自定义/私有链接返回 false——那些形态改写 endpoint 会绕开用户的组网选择，
+// 由调用方转为提示用户改配置。
+func AWSRegionalEndpoint(host, region string) (string, bool) {
+	host = strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://"), "/")
+	if host == "s3.amazonaws.com" {
+		return fmt.Sprintf("s3.%s.amazonaws.com", region), true
+	}
+	if m := awsS3CoreHost.FindStringSubmatch(host); m != nil {
+		prefix := m[1]
+		if strings.Contains(host, ".dualstack.") {
+			prefix += ".dualstack"
+		}
+		return fmt.Sprintf("%s.%s.amazonaws.com", prefix, region), true
+	}
+	return "", false
 }

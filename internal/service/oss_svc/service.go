@@ -16,6 +16,10 @@ import (
 
 const defaultPresignExpiry = time.Hour
 
+// sharedBucketEndpoints 跨 IPC 调用共享的「桶→实际 endpoint」记忆:浏览列表时解析
+// 出的跨区域重定向,后续缩略图 presign / 下载直达,不必每个适配层实例重新发现。
+var sharedBucketEndpoints = newHostBucketEndpointMemo()
+
 type Service struct{}
 
 func New() *Service { return &Service{} }
@@ -57,7 +61,7 @@ func (s *Service) connectWithConfig(ctx context.Context, assetID int64) (Client,
 	adapterCfg, adapterSecret := cfg, secret
 	adapter.withRedirectDial(func(endpoint string) (*minio.Client, error) {
 		return connpool.DialOSSEndpoint(context.Background(), adapterCfg, adapterSecret, endpoint)
-	})
+	}).withBucketEndpoints(sharedBucketEndpoints)
 	return adapter, cfg, nil
 }
 
@@ -179,7 +183,11 @@ func (s *Service) TestConfig(ctx context.Context, cfg *asset_entity.OSSConfig, s
 	if err != nil {
 		return err
 	}
-	return probeWith(ctx, newMinioAdapter(mc), cfg.Bucket)
+	adapter := newMinioAdapter(mc).withBucketEndpoints(sharedBucketEndpoints)
+	adapter.withRedirectDial(func(endpoint string) (*minio.Client, error) {
+		return connpool.DialOSSEndpoint(context.Background(), cfg, secret, endpoint)
+	})
+	return probeWith(ctx, adapter, cfg.Bucket)
 }
 
 func presignExpiry(secs int) time.Duration {
