@@ -82,6 +82,10 @@ export default defineConfig({
     // 从而屏幕渲染停滞、键盘看上去"无响应"。
     minify: "terser",
     cssMinify: "lightningcss",
+    // 500kB 是 web 场景的网络加载阈值；桌面应用资源走本地嵌入，无网络往返，
+    // 重的依赖(monaco/xterm/AIChat)已各自成独立 chunk 按需加载，剩下的主包
+    // 大小不影响冷启动，无需为消警告做激进的手动分包。
+    chunkSizeWarningLimit: 4000,
   },
   test: {
     environment: "happy-dom",
