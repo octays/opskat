@@ -27,7 +27,7 @@ import (
 )
 
 // githubRepo 是发布 release 的仓库（更新检查与资产下载都指向它）。
-const githubRepo = "opskat/opskat"
+const githubRepo = "octays/opskat"
 
 // apiBaseURL 是 GitHub release API 的地址；测试中可覆盖。
 var apiBaseURL = "https://api.github.com/repos/" + githubRepo
