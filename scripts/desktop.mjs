@@ -14,7 +14,7 @@ const option = (name, fallback) => {
 const dev = args.includes("--dev");
 const target = option("--platform", `${process.env.GOOS || (process.platform === "win32" ? "windows" : process.platform)}/${process.env.GOARCH || (process.arch === "x64" ? "amd64" : process.arch)}`);
 const [goos, goarch] = target.split("/");
-const version = process.env.VERSION || "1.16.0";
+const version = process.env.VERSION || "1.16.1";
 const versionMatch = /^v?(\d+\.\d+\.\d+)(?:[-+].*)?$/.exec(version);
 if (!versionMatch) throw new Error(`Expected a semantic release version, received: ${version}`);
 const numericVersion = versionMatch[1];
