@@ -159,6 +159,8 @@ func (s *System) SetWindowAppearance(dark bool) {
 }
 
 // SetLanguageChangeCallback 注册语言切换回调（main.go：重建原生应用菜单）。
+//
+//wails:ignore
 func (s *System) SetLanguageChangeCallback(fn func()) {
 	s.mu.Lock()
 	s.onLanguageChange = fn
