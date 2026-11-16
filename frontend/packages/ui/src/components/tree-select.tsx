@@ -237,6 +237,13 @@ export function TreeSelect({
           <div
             ref={dropdownRef}
             className="fixed z-50 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+            // 本下拉 portal 到 body，不在 Radix 模态 Dialog 的 DOM 范围内：FocusScope 在
+            // document 上监听 focusin，会把聚焦到这里的搜索框视为「焦点逃逸」并同步抢回
+            // 对话框——WKWebView 里表现为搜索框完全无法键入（Chromium 竞态时序不同，
+            // 偶尔幸存，Playwright 的 fill 走 CDP 绕过焦点竞争，测不出）。在容器上截断
+            // 焦点事件冒泡，Radix 看不到这次聚焦，也就不会抢。
+            onFocusCapture={(e) => e.stopPropagation()}
+            onBlurCapture={(e) => e.stopPropagation()}
             style={{
               top: position.top,
               bottom: position.bottom,

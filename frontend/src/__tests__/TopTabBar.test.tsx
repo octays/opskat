@@ -23,6 +23,6 @@ describe("TopTabBar window controls inset", () => {
   it("keeps tab actions clear of Windows window controls when it is the topmost bar", async () => {
     const { container } = render(<TopTabBar topmost />);
 
-    await waitFor(() => expect(container.querySelector("[data-top-tabbar]")).toHaveClass("pr-[140px]"));
+    await waitFor(() => expect(container.querySelector("[data-top-tabbar]")).toHaveClass("pr-35"));
   });
 });
