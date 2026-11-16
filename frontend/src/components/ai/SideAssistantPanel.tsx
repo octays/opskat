@@ -1,6 +1,6 @@
 import { openPageWindow } from "@/lib/openPageWindow";
 import { lazy, Suspense, useRef, useState, useEffect } from "react";
-import { cn, useResizeHandle } from "@opskat/ui";
+import { useResizeHandle } from "@opskat/ui";
 import { useShallow } from "zustand/shallow";
 import { useAIStore } from "@/stores/aiStore";
 import { useFullscreen } from "@/hooks/useFullscreen";
@@ -184,8 +184,8 @@ export function SideAssistantPanel({ collapsed, onToggle }: SideAssistantPanelPr
         {resizing && <div className="fixed inset-0 z-50 cursor-col-resize" />}
 
         <div
-          className={cn("w-full shrink-0", isFullscreen ? "h-0" : "h-8")}
-          style={{ "--wails-draggable": "drag" } as React.CSSProperties}
+          className="w-full shrink-0 h-4"
+          style={isFullscreen ? undefined : ({ "--wails-draggable": "drag" } as React.CSSProperties)}
         />
 
         <div className="relative">

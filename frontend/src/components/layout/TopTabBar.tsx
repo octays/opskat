@@ -261,7 +261,7 @@ export function TopTabBar({ topmost = false }: TopTabBarProps) {
           data-top-tabbar
           className={cn(
             "flex items-center border-b overflow-hidden bg-background",
-            topmost && platform === "windows" && "pr-[140px]"
+            topmost && platform === "windows" && "pr-35"
           )}
           style={{ "--wails-draggable": "drag" } as React.CSSProperties}
         >
