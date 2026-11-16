@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/octays/opskat/internal/desktop"
+	"github.com/octays/opskat/internal/pkg/macbtn"
 
 	"github.com/cago-frame/cago/pkg/logger"
 	"github.com/google/uuid"
@@ -77,8 +78,9 @@ func (s *System) openNativeWindow(name string, query url.Values) {
 		InitialPosition: application.WindowCentered,
 		URL:             desktop.WindowURL(query),
 		Frameless:       runtime.GOOS == "windows", EnableFileDrop: true, ZoomControlEnabled: true,
-		Mac: application.MacWindow{TitleBar: application.MacTitleBarHiddenInset, Backdrop: application.MacBackdropTransparent},
+		Mac: application.MacWindow{TitleBar: application.MacTitleBarHidden, Backdrop: application.MacBackdropTransparent},
 	})
+	macbtn.TrackWindow(window)
 	var approved atomic.Bool
 	unsubscribe := app.Event.On("desktop:close-ready", func(event *application.CustomEvent) {
 		if event.Sender == name {

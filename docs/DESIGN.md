@@ -162,7 +162,7 @@ Raising a size inside a fixed-height container (toolbar `h-6` / `h-7`, table row
 
 OpsKat sizes chrome in fixed pixels (it's one window, not a fluid page):
 
-- **TopBar** ≈ `h-10` (40px); **Sidebar** icon rail ≈ `w-14` (56px). macOS reserves traffic-light space (`pl-20`) on the TopBar; Windows draws its own `WindowControls`.
+- **TopBar** ≈ `h-9` (36px); on macOS the native traffic lights are re-centered onto the bar's midline by [`internal/pkg/macbtn`](../internal/pkg/macbtn/) (`BarHeightPt` must track the `h-*` class — AppKit's HiddenInset toolbar centers them at ~24.75pt otherwise; fullscreen hides them, matching the system behavior). **Sidebar** icon rail ≈ `w-14` (56px). macOS reserves traffic-light space (`pl-20`) on the TopBar; Windows draws its own `WindowControls`.
 - **Panes** divide with `flex` ratios and a `1px` divider (`border-panel-divider` / `bg-border`), resized by drag (§7).
 - **Block spacing:** start sections at `gap-4` (16px); card padding `p-4`–`p-6`.
 
@@ -253,7 +253,7 @@ notifySuccess("Asset saved");    // top-center, default duration — other succe
 Top-center toasts must clear the window title bar **and** the top tab bar (they would
 otherwise sit on the tab strip and swallow clicks while switching tabs —
 `globals.css` pins `--offset-top` for top-positioned toasters to 84px; re-check it
-whenever the title bar (`h-10`) or `TopTabBar` height changes).
+whenever the title bar (`h-9`) or `TopTabBar` height changes).
 
 Errors / warnings / info stay on the **raw sonner API at the default bottom-right** (`toast.error(...)`, `toast.warning(...)`) — long error copy needs room and dwell time, which top-center can't give. Success is top-center because terminal / AI / query views refresh **bottom-up**, so a bottom toast would occlude the freshest output (#135).
 
@@ -288,7 +288,7 @@ OpsKat is a **single resizable window**, so the layout is a fixed shell of neste
 | Region | File | Role |
 | --- | --- | --- |
 | `WindowControls` | [`layout/WindowControls.tsx`](../frontend/src/components/layout/WindowControls.tsx) | Windows-only min/max/close (macOS uses native traffic lights) |
-| `TopBar` | [`layout/TopBar.tsx`](../frontend/src/components/layout/TopBar.tsx) | `h-10` draggable region (`--wails-draggable: drag`); command/search trigger; toggles for asset tree & AI panel |
+| `TopBar` | [`layout/TopBar.tsx`](../frontend/src/components/layout/TopBar.tsx) | draggable region (`--wails-draggable: drag`) inside the shared `WindowTitleBar` (`h-9`, 36px); command/search trigger; toggles for asset tree & AI panel |
 | `Sidebar` | [`layout/Sidebar.tsx`](../frontend/src/components/layout/Sidebar.tsx) | `w-14` icon rail — top-level navigation (home, settings, keys, snippets, audit, port-forward) |
 | `TopTabBar` / `LeftPanel` | [`layout/TopTabBar.tsx`](../frontend/src/components/layout/TopTabBar.tsx) · [`layout/LeftPanel.tsx`](../frontend/src/components/layout/LeftPanel.tsx) | The tab strip — **horizontal (top)** or **vertical (left)** depending on `layoutStore.tabBarLayout` |
 | `MainPanel` | [`layout/MainPanel.tsx`](../frontend/src/components/layout/MainPanel.tsx) | Hosts the active tab's content |

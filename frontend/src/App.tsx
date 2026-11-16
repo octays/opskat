@@ -51,10 +51,12 @@ import * as group_entity from "@bindings/github.com/octays/opskat/internal/model
 import { EventsEmit, EventsOn, WindowToggleMaximise } from "@/lib/desktop";
 import { ConfirmQuit } from "@clients/system";
 import { errorMessage } from "@/lib/errorMessage";
+import { useNativeWindowTheme } from "@/hooks/useNativeWindowTheme";
 
 function App() {
   const workspaceWindow = useWorkspaceWindow();
   const { t } = useTranslation();
+  useNativeWindowTheme();
   const [quitActivities, setQuitActivities] = useState<QuitActivity[] | null>(null);
 
   useEffect(() => {

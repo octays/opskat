@@ -10,7 +10,8 @@ export function WindowTitleBar({ title, children }: { title?: string; children?:
     <div
       data-testid="window-titlebar"
       className={cn(
-        "flex h-10 w-full shrink-0 items-center gap-2 border-b border-panel-divider bg-sidebar",
+        // 与 macOS 红绿灯对齐基准一致：internal/pkg/macbtn.BarHeightPt（36px）。
+        "flex h-9 w-full shrink-0 items-center gap-2 border-b border-panel-divider bg-sidebar",
         platform === "darwin" && !fullscreen ? "pl-20" : "pl-2",
         platform === "windows" ? "pr-[140px]" : "pr-2"
       )}

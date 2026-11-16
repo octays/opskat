@@ -61,6 +61,7 @@ import (
 
 	"github.com/cago-frame/cago/pkg/logger"
 	"github.com/octays/opskat/internal/desktop"
+	"github.com/octays/opskat/internal/pkg/macbtn"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"go.uber.org/zap"
@@ -392,8 +393,12 @@ func main() {
 		Name: "main", Title: "OpsKat", URL: desktop.WindowURL(nil), Width: windowWidth, Height: windowHeight,
 		MinWidth: minWindowWidth, MinHeight: minWindowHeight,
 		Frameless: runtime.GOOS == "windows", EnableFileDrop: true, ZoomControlEnabled: true,
-		Mac: application.MacWindow{TitleBar: application.MacTitleBarHiddenInset, Backdrop: application.MacBackdropTransparent},
+		// MacTitleBarHidden（无 toolbar）：HiddenInset 的 NSToolbar 会把全屏 hover 展示
+		// 容器撑高到 33pt（标准菜单栏是 25pt），红绿灯在其中也无法正常居中。
+		Mac: application.MacWindow{TitleBar: application.MacTitleBarHidden, Backdrop: application.MacBackdropTransparent},
 	})
+	// macOS：把原生红绿灯对齐到顶栏中线（见 internal/pkg/macbtn）。
+	macbtn.TrackWindow(mainWindow)
 	system.RegisterMainWindowDrops(mainWindow)
 	mainWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()

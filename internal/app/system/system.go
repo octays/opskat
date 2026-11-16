@@ -11,6 +11,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"github.com/octays/opskat/internal/pkg/macbtn"
 	"github.com/octays/opskat/internal/sshpool"
 )
 
@@ -148,6 +149,13 @@ func (s *System) SetLanguage(lang string) {
 	if onChange != nil {
 		onChange()
 	}
+}
+
+// SetWindowAppearance 前端调用，把原生窗口外观（标题栏底色、macOS 全屏 hover
+// 展示条等系统绘制背景）同步成应用内主题。原生外观不跟随 CSS 主题，应用配了
+// 夜间模式而系统是亮色时需要显式同步；非 darwin 平台是空操作。
+func (s *System) SetWindowAppearance(dark bool) {
+	macbtn.SetWindowAppearance(dark)
 }
 
 // SetLanguageChangeCallback 注册语言切换回调（main.go：重建原生应用菜单）。
