@@ -221,8 +221,11 @@
   },
   "appQuit": {
     "activityTitle": "仍有任务正在执行",
+    "activityTitleConnections": "仍有会话保持连接",
     "activitySummary": "{{running}} 个任务正在执行，另有 {{connections}} 个会话保持连接",
     "activitySummaryRunningOnly": "{{running}} 个任务正在执行，退出会中断它们",
+    "activitySummaryConnectionsOnly": "{{connections}} 个会话保持连接，退出后将断开",
+    "quitConnections": "退出并断开 {{count}} 个会话",
     "runningGroup": "正在执行 · 退出后无法继续",
     "connectionGroup": "保持连接 · 退出后将断开",
     "runningStatus": "正在执行",

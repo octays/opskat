@@ -46,6 +46,22 @@ describe("ActiveTasksQuitDialog", () => {
     );
   });
 
+  // 仅连接、无运行中任务：退出现在也会确认，标题/摘要/按钮都以会话为主体，
+  // 不能出现"退出并中断 0 个任务"。
+  it("presents connection sessions on their own when nothing is running", () => {
+    const connections = activities.filter((a) => a.category === "connection");
+    render(<ActiveTasksQuitDialog open activities={connections} onOpenChange={() => {}} onConfirm={() => {}} />);
+
+    expect(screen.getByText("appQuit.activityTitleConnections")).toBeInTheDocument();
+    expect(
+      screen.getByText(`appQuit.activitySummaryConnectionsOnly(${JSON.stringify({ connections: 3 })})`)
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("confirm-force-quit")).toHaveTextContent(
+      `appQuit.quitConnections(${JSON.stringify({ count: 3 })})`
+    );
+    expect(screen.queryByText("appQuit.runningGroup")).not.toBeInTheDocument();
+  });
+
   it("does not render the removed explanatory callout or idle-session preference", () => {
     render(<ActiveTasksQuitDialog open activities={activities} onOpenChange={() => {}} onConfirm={() => {}} />);
 

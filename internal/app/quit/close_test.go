@@ -23,15 +23,31 @@ func (s *closeSpy) prompt() Prompt {
 func running() Activity    { return Activity{Kind: "ai", Category: "running", RefID: 7} }
 func connection() Activity { return Activity{Kind: "terminal", Category: "connection", Title: "web-1"} }
 
-// 空闲的远程连接关掉不丢任何东西，不该把用户拦在退出流程里。
-func TestOnBeforeCloseAllowsQuitWithOnlyConnections(t *testing.T) {
+// 开着的连接会话（终端/RDP/VNC）随退出被切断，远程侧正在跑的操作会跟着中断——
+// 仅有连接时也要拦下来确认，把断开清单交给用户决定。
+func TestOnBeforeCloseBlocksWithOnlyConnections(t *testing.T) {
+	spy := &closeSpy{showAck: true}
+
+	if !OnBeforeClose(false, []Activity{connection(), connection()}, spy.prompt()) {
+		t.Fatal("open connections did not block quit")
+	}
+	if len(spy.shown) != 2 {
+		t.Fatalf("dialog got %d activities, want both connections listed", len(spy.shown))
+	}
+	if spy.flushed {
+		t.Fatal("flushed AI while the quit was still blocked awaiting confirmation")
+	}
+}
+
+// 完全空闲的退出（无任务、无连接）不弹框，不打断 Cmd+Q。
+func TestOnBeforeCloseAllowsIdleQuit(t *testing.T) {
 	spy := &closeSpy{}
 
-	if OnBeforeClose(false, []Activity{connection(), connection()}, spy.prompt()) {
-		t.Fatal("open connections blocked quit, want quit allowed")
+	if OnBeforeClose(false, nil, spy.prompt()) {
+		t.Fatal("idle quit was blocked")
 	}
 	if spy.showCalled {
-		t.Fatal("confirm dialog shown for connections only")
+		t.Fatal("confirm dialog shown with nothing open")
 	}
 	if !spy.flushed {
 		t.Fatal("AI conversations not flushed before quitting")

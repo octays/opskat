@@ -78,11 +78,15 @@ export function ActiveTasksQuitDialog({ open, activities, onOpenChange, onConfir
           <div className="row-span-2 flex size-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
             <CircleAlert className="size-5" />
           </div>
-          <AlertDialogTitle>{t("appQuit.activityTitle")}</AlertDialogTitle>
+          <AlertDialogTitle>
+            {running.length > 0 ? t("appQuit.activityTitle") : t("appQuit.activityTitleConnections")}
+          </AlertDialogTitle>
           <div className="mt-1 text-sm text-muted-foreground">
-            {connections.length > 0
-              ? t("appQuit.activitySummary", { running: running.length, connections: connections.length })
-              : t("appQuit.activitySummaryRunningOnly", { running: running.length })}
+            {running.length > 0
+              ? connections.length > 0
+                ? t("appQuit.activitySummary", { running: running.length, connections: connections.length })
+                : t("appQuit.activitySummaryRunningOnly", { running: running.length })
+              : t("appQuit.activitySummaryConnectionsOnly", { connections: connections.length })}
           </div>
         </AlertDialogHeader>
 
@@ -112,7 +116,9 @@ export function ActiveTasksQuitDialog({ open, activities, onOpenChange, onConfir
         <AlertDialogFooter className="p-6 pt-5">
           <AlertDialogCancel>{t("action.cancel")}</AlertDialogCancel>
           <AlertDialogAction variant="destructive" data-testid="confirm-force-quit" onClick={onConfirm}>
-            {t("appQuit.quitActivities", { count: running.length })}
+            {running.length > 0
+              ? t("appQuit.quitActivities", { count: running.length })
+              : t("appQuit.quitConnections", { count: connections.length })}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

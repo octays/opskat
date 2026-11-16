@@ -221,8 +221,11 @@
   },
   "appQuit": {
     "activityTitle": "Tasks are still running",
+    "activityTitleConnections": "Sessions are still connected",
     "activitySummary": "{{running}} task(s) running, plus {{connections}} connected session(s)",
     "activitySummaryRunningOnly": "Quitting now interrupts {{running}} running task(s)",
+    "activitySummaryConnectionsOnly": "{{connections}} session(s) still connected, quitting disconnects them",
+    "quitConnections": "Quit and disconnect {{count}} session(s)",
     "runningGroup": "Running · cannot continue after quitting",
     "connectionGroup": "Connected · will be disconnected on quit",
     "runningStatus": "Running",

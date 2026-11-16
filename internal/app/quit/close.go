@@ -25,9 +25,13 @@ func OnBeforeClose(forced bool, activities []Activity, prompt Prompt) bool {
 	return false
 }
 
+// hasInterruptibleWork 报告是否有会因退出而被中断的活动：运行中的 AI 任务 / opsctl
+// 审批，以及开着的连接会话（终端 / RDP / VNC）——会话随退出被切断，远程侧正在跑的
+// 操作会跟着中断，所以连接也算。空闲退出不拦。
 func hasInterruptibleWork(activities []Activity) bool {
 	for _, activity := range activities {
-		if activity.Category == "running" {
+		switch activity.Category {
+		case "running", "connection":
 			return true
 		}
 	}
