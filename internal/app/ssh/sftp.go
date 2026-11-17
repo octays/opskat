@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/octays/opskat/internal/pkg/notifycenter"
 	"github.com/octays/opskat/internal/pkg/transfer"
 	"github.com/octays/opskat/internal/service/sftp_svc"
 
@@ -99,7 +100,9 @@ func (s *SSH) SFTPDownload(sessionID, remotePath string) (string, error) {
 		err := s.sftp.Download(s.ctx, transferID, sessionID, remotePath, localPath, func(p transfer.Progress) {
 			application.Get().Event.Emit("transfer:progress:"+transferID, p)
 		})
-		application.Get().Event.Emit("transfer:progress:"+transferID, finalTransferEvent(transferID, localPath, err))
+		final := finalTransferEvent(transferID, localPath, err)
+		application.Get().Event.Emit("transfer:progress:"+transferID, final)
+		notifycenter.TransferFinished(s.ctx, final.Status, filepath.Base(localPath))
 	}()
 	return transferID, nil
 }
@@ -123,7 +126,9 @@ func (s *SSH) SFTPDownloadDir(sessionID, remotePath string) (string, error) {
 		err := s.sftp.DownloadDir(s.ctx, transferID, sessionID, remotePath, localDir, func(p transfer.Progress) {
 			application.Get().Event.Emit("transfer:progress:"+transferID, p)
 		})
-		application.Get().Event.Emit("transfer:progress:"+transferID, finalTransferEvent(transferID, localDir, err))
+		final := finalTransferEvent(transferID, localDir, err)
+		application.Get().Event.Emit("transfer:progress:"+transferID, final)
+		notifycenter.TransferFinished(s.ctx, final.Status, filepath.Base(localDir))
 	}()
 	return transferID, nil
 }
@@ -143,7 +148,9 @@ func (s *SSH) SFTPUploadFile(sessionID, localPath, remotePath string) (string, e
 		application.Get().Event.Emit("transfer:progress:"+transferID, p)
 	}
 	emitDone := func(err error) {
-		application.Get().Event.Emit("transfer:progress:"+transferID, finalTransferEvent(transferID, "", err))
+		final := finalTransferEvent(transferID, "", err)
+		application.Get().Event.Emit("transfer:progress:"+transferID, final)
+		notifycenter.TransferFinished(s.ctx, final.Status, filepath.Base(localPath))
 	}
 
 	go func() {

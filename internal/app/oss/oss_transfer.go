@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/octays/opskat/internal/pkg/notifycenter"
 	"github.com/octays/opskat/internal/pkg/transfer"
 	"github.com/octays/opskat/internal/service/oss_svc"
 
@@ -31,19 +32,27 @@ func (o *OSS) emitProgress(transferID string, p transfer.Progress) {
 	application.Get().Event.Emit("transfer:progress:"+transferID, p)
 }
 
-// emitTerminal 依据 err 发出 done/error/取消 终态(立即,不节流)。
-func (o *OSS) emitTerminal(transferID string, err error) {
+// emitTerminal 依据 err 发出 done/error/取消 终态(立即,不节流)。subject 描述
+// 传输对象,终态同时送系统通知(取消不打扰)。
+func (o *OSS) emitTerminal(transferID, subject string, err error) {
+	status := transfer.StatusDone
 	switch {
 	case err == nil:
 		logger.Ctx(o.ctx).Info("oss transfer end", zap.String("transferId", transferID))
-		o.emitProgress(transferID, transfer.Progress{TransferID: transferID, Status: transfer.StatusDone})
 	case errors.Is(err, context.Canceled):
 		logger.Ctx(o.ctx).Info("oss transfer canceled", zap.String("transferId", transferID))
-		o.emitProgress(transferID, transfer.Progress{TransferID: transferID, Status: transfer.StatusCancelled})
+		status = transfer.StatusCancelled
 	default:
 		logger.Ctx(o.ctx).Error("oss transfer fail", zap.String("transferId", transferID), zap.Error(err))
-		o.emitProgress(transferID, transfer.Progress{TransferID: transferID, Status: transfer.StatusError, Error: err.Error()})
+		status = transfer.StatusError
 	}
+	// 事件载荷保持原语义：仅 error 终态携带 Error 文案。
+	ev := transfer.Progress{TransferID: transferID, Status: status}
+	if status == transfer.StatusError {
+		ev.Error = err.Error()
+	}
+	o.emitProgress(transferID, ev)
+	notifycenter.TransferFinished(o.ctx, status, subject)
 }
 
 // OSSPickUploadFiles 弹原生多选对话框,返回用户选中的本地文件路径;用户取消 → 返回空切片。
@@ -95,7 +104,7 @@ func (o *OSS) runTransfer(transferID, what string, run func(ctx context.Context)
 		if r := recover(); r != nil {
 			logger.Ctx(o.ctx).Error("oss transfer panic recovered",
 				zap.String("transferId", transferID), zap.Any("panic", r), zap.Stack("stack"))
-			o.emitTerminal(transferID, fmt.Errorf("%s发生意外错误: %v", what, r))
+			o.emitTerminal(transferID, what, fmt.Errorf("%s发生意外错误: %v", what, r))
 		}
 	}()
 
@@ -106,12 +115,12 @@ func (o *OSS) runTransfer(transferID, what string, run func(ctx context.Context)
 		cancel()
 	}()
 
-	o.emitTerminal(transferID, run(ctx))
+	o.emitTerminal(transferID, what, run(ctx))
 }
 
 // uploadObject 单文件流式上传,打开文件、报进度与写对象都在 service.UploadFile 里。
 func (o *OSS) uploadObject(transferID string, assetID int64, bucket, key, localPath string) {
-	o.runTransfer(transferID, "上传", func(ctx context.Context) error {
+	o.runTransfer(transferID, "上传 "+filepath.Base(localPath), func(ctx context.Context) error {
 		return o.service.UploadFile(ctx, &oss_svc.UploadFileRequest{
 			AssetID: assetID, Bucket: bucket, Key: key, LocalPath: localPath,
 			ContentType: contentTypeFor(localPath), TransferID: transferID,
@@ -143,7 +152,7 @@ func (o *OSS) OSSDownloadObject(assetID int64, bucket, key string) (string, erro
 
 // downloadObject 单对象流式下载:GetObject 拿流 → 建本地文件 → transfer.Copy。
 func (o *OSS) downloadObject(transferID string, assetID int64, bucket, key, localPath string) {
-	o.runTransfer(transferID, "下载", func(ctx context.Context) error {
+	o.runTransfer(transferID, "下载 "+path.Base(key), func(ctx context.Context) error {
 		rc, size, err := o.service.GetObject(ctx, assetID, bucket, key)
 		if err != nil {
 			return err
@@ -181,7 +190,7 @@ func (o *OSS) OSSDownloadFolder(assetID int64, bucket, prefix string) (string, e
 	logger.Ctx(o.i18nCtx()).Info("oss folder download prepared", zap.String("transferId", transferID),
 		zap.Int64("assetId", assetID), zap.String("bucket", bucket), zap.String("prefix", prefix))
 	o.pending.Store(transferID, func() {
-		o.runTransfer(transferID, "下载", func(ctx context.Context) error {
+		o.runTransfer(transferID, "下载 "+strings.Trim(prefix, "/"), func(ctx context.Context) error {
 			return o.service.DownloadPrefix(ctx, &oss_svc.DownloadPrefixRequest{
 				AssetID: assetID, Bucket: bucket, Prefix: prefix, DestDir: localDir, TransferID: transferID,
 				OnProgress: func(p transfer.Progress) { o.emitProgress(transferID, p) },
@@ -200,7 +209,7 @@ func (o *OSS) OSSCancelTransfer(transferID string) error {
 	if v, ok := o.cancels.Load(transferID); ok {
 		v.(context.CancelFunc)()
 	} else if _, ok := o.pending.LoadAndDelete(transferID); ok {
-		o.emitTerminal(transferID, context.Canceled)
+		o.emitTerminal(transferID, "传输", context.Canceled)
 	}
 	return nil
 }

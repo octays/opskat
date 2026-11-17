@@ -46,3 +46,27 @@ func TestBlurNeverUnderflows(t *testing.T) {
 		t.Fatalf("focusedWindows = %d, want 0 (no underflow)", focusedWindows)
 	}
 }
+
+// 传输终态：完成/失败通知，取消(用户主动)与未知状态不打扰。
+func TestTransferFinishedNotifiesDoneAndErrorOnly(t *testing.T) {
+	sent := make([]string, 0, 2)
+	Init(func(title, body string) error {
+		sent = append(sent, title+"/"+body)
+		return nil
+	})
+
+	TransferFinished(context.Background(), "done", "report.tar.gz")
+	TransferFinished(context.Background(), "error", "backup.sql")
+	TransferFinished(context.Background(), "cancelled", "movie.mp4")
+	TransferFinished(context.Background(), "progress", "weird.mid")
+
+	want := []string{"传输完成/report.tar.gz", "传输失败/backup.sql"}
+	if len(sent) != len(want) {
+		t.Fatalf("got %v, want %v", sent, want)
+	}
+	for i := range want {
+		if sent[i] != want[i] {
+			t.Fatalf("notification %d = %q, want %q", i, sent[i], want[i])
+		}
+	}
+}
