@@ -9,7 +9,7 @@ else
     BIN_PATH := ./build/bin/opskat.exe
 endif
 
-VERSION ?= 1.16.1
+VERSION ?= 1.16.2
 APP_INSTALL_DIR ?= $(HOME)/Applications
 COMMIT_ID := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 VERSION_PKG := github.com/cago-frame/cago/configs
