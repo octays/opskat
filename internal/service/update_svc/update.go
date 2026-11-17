@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cago-frame/cago/configs"
@@ -88,7 +89,21 @@ func fetchRelease(channel string) (*ReleaseInfo, error) {
 	}
 }
 
-// fetchReleaseFromURL 从指定 URL 获取单个 release
+// etagCache 让重复的更新检查走条件请求：GitHub 的 304 Not Modified 不消耗 API
+// 配额——未认证额度只有 60 次/小时且按出口 IP 计，共享出口（公司 NAT / 公共代理）
+// 上裸 GET 很快 403（describeAPIError 那条注释的场景）。按 URL 键缓存 ETag 与已
+// 解析的响应，进程内有效。
+var (
+	etagMu   sync.Mutex
+	etagSeen = map[string]etagEntry{}
+)
+
+type etagEntry struct {
+	etag    string
+	release *ReleaseInfo
+}
+
+// fetchReleaseFromURL 从指定 URL 获取单个 release，命中 ETag 时走条件请求。
 func fetchReleaseFromURL(url string) (*ReleaseInfo, error) {
 	client := newHTTPClient(15 * time.Second)
 	req, err := http.NewRequest("GET", url, nil)
@@ -96,6 +111,12 @@ func fetchReleaseFromURL(url string) (*ReleaseInfo, error) {
 		return nil, fmt.Errorf("create request failed: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	etagMu.Lock()
+	cached, hasCache := etagSeen[url]
+	etagMu.Unlock()
+	if hasCache {
+		req.Header.Set("If-None-Match", cached.etag)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -107,15 +128,27 @@ func fetchReleaseFromURL(url string) (*ReleaseInfo, error) {
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var release ReleaseInfo
+		if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+			return nil, fmt.Errorf("decode response failed: %w", err)
+		}
+		if etag := resp.Header.Get("ETag"); etag != "" {
+			etagMu.Lock()
+			etagSeen[url] = etagEntry{etag: etag, release: &release}
+			etagMu.Unlock()
+		}
+		return &release, nil
+	case http.StatusNotModified:
+		// 服务器确认没变：返回缓存，这次请求不占 API 配额。
+		if hasCache {
+			return cached.release, nil
+		}
+		return nil, describeAPIError(resp)
+	default:
 		return nil, describeAPIError(resp)
 	}
-
-	var release ReleaseInfo
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("decode response failed: %w", err)
-	}
-	return &release, nil
 }
 
 // describeAPIError 把 GitHub API 的非 200 响应转成可定位的错误：响应体里的
