@@ -42,6 +42,14 @@ interface InternalInstance extends TerminalInstance {
 
 const registry = new Map<string, InternalInstance>();
 
+// 终端 URL 只允许「平台修饰键 + 左键」打开（mac ⌘ / 其它 Ctrl，iTerm2/VS Code 同款
+// 惯例）：裸点击在选中、复制、点历史输出时误触率太高，会把浏览器弹得到处都是。
+export function shouldActivateTerminalUrl(event: MouseEvent | undefined): boolean {
+  if (event && event.button !== 0) return false;
+  if (event && !event.metaKey && !event.ctrlKey) return false;
+  return true;
+}
+
 export function getOrCreateTerminal(
   sessionId: string,
   init: {
@@ -81,7 +89,7 @@ export function getOrCreateTerminal(
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
   const webLinksAddon = new WebLinksAddon((event, uri) => {
-    if (event && event.button !== 0) return;
+    if (!shouldActivateTerminalUrl(event)) return;
     const url = normalizeHttpUrl(uri);
     if (url) BrowserOpenURL(url);
   });
